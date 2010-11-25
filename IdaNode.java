@@ -79,6 +79,7 @@ public class IdaNode{
 		if(cache_flag)
 		{
 			thread_cache = new BoardCache[total_threads];
+			IplCache = new BoardCache();
 			for(int r=0; r<total_threads; r++)
 				thread_cache[r]=new BoardCache();
 		}
@@ -207,10 +208,12 @@ public class IdaNode{
 					send_board_port = ibis.createSendPort(board_port);
 					send_board_port.connect(joinedIbises[i], "board");
 					WriteMessage m = send_board_port.newMessage();
-					m.writeInt(assigned_ids++);
+					m.writeInt(assigned_ids);
 					System.out.println("machine "+i+" has id: "+assigned_ids);//DEBUG
 					m.finish();
+					send_board_port.disconnect(joinedIbises[i], "board");
 					send_board_port.close();
+					assigned_ids++;
 				}
 			}
 			System.out.println("machines Ids sent");//DEBUG
@@ -229,11 +232,20 @@ public class IdaNode{
 					m.writeObject(board_initial);
 					System.out.println("Board sent to machine: "+i);//DEBUG
 					m.finish();
+					send_board_port.disconnect(joinedIbises[i], "board");
 					send_board_port.close();
 				}
 			}
 			System.out.println("Boards sent");//DEBUG
+			
+			/* Now send the total number of machines which joined tha pool
+			 * to each member
+			 */
 
+			WriteMessage msg_total_machines = send_info_port.newMessage();
+			msg_total_machines.writeInt(total_machines);
+			msg_total_machines.finish();
+			
 			while(true)
 			{
 				/* With every bound iteration, check 
@@ -389,6 +401,12 @@ public class IdaNode{
 			msg_board.finish();
 			System.out.println("received myBoard");//DEBUG
 			
+			/* receive the total_machines from Server */
+			ReadMessage msg_total_machines = receive_info_port.receive();
+			IdaNode.total_machines = msg_total_machines.readInt();
+			msg_total_machines.finish();
+			System.out.println("received total_machines: "+total_machines);
+			
 			bound = myBoard.distance();
 			while(true)
 			{
@@ -407,6 +425,12 @@ public class IdaNode{
 				/* CONTINUE signal */
 				else
 				{
+					/*Initialising the job queue with:
+					 * capacity = capacity of board cache = 10*1024
+					 * FIFO = ON 
+					 */
+					queue = new ArrayBlockingQueue<Object>(10*1024, true);
+					
 					/* start the threads
 					 * Threads will not start immediately, 
 					 * since they will wait for notification from master thread
@@ -479,7 +503,7 @@ public class IdaNode{
 			 */
 			Board[] children_array = null;
 			if(cache_flag)
-				children_array = child_board.makeMoves(IplCache);
+				children_array = child_board.makeMoves(IdaNode.IplCache);
 			else
 				children_array = child_board.makeMoves();
 
@@ -543,7 +567,7 @@ public class IdaNode{
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
-
+				System.out.println("Thread successfully picked a board");//DEBUG
 				if(IdaNode.cache_flag)
 				{
 					String astring = currentThread().getName();
