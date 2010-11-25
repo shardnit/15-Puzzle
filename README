@@ -1,0 +1,1 @@
+This project consists of writing a parallel program in Java using the Ibis systeem and running it on the DAS-3. Aim is to write a parallel branch-and-bound program that uses the IDA* search strategy to solve the 15-puzzle.
