@@ -233,7 +233,7 @@ public class IdaNode{
 				}
 			}
 			System.out.println("Boards sent");//DEBUG
-			
+
 			while(true)
 			{
 				/* With every bound iteration, check 
@@ -291,6 +291,7 @@ public class IdaNode{
 				 */
 				generate_boards(board_initial);
 
+				System.out.println("queue filled up by Server"); //DEBUG
 				/* wait for all threads to finish */
 				for(int i=0; i<total_threads; i++)
 				{
@@ -302,6 +303,7 @@ public class IdaNode{
 					}
 				}
 
+				System.out.println("Server threads finished");//DEBUG
 				/* wait for all other nodes to report back the results */
 				for(int i=1; i<total_machines; i++)
 				{
@@ -310,6 +312,7 @@ public class IdaNode{
 					worker_solutions.finish();
 					IdaNode.addSolutions(child_sol);
 				}
+				System.out.println("received solutions from all workers");//DEBUG
 				long end = System.currentTimeMillis();
 				time_taken +=(end-start);
 				bound+=2;
@@ -370,73 +373,80 @@ public class IdaNode{
 			if(myId==-1)
 				myId = msg_id.readInt();
 			msg_id.finish();
+			System.out.println("received myID");//DEBUG
 
 			/* now receive the board */
 			ReadMessage msg_board = receive_board_port.receive();
 			if(myBoard==null)
+			{
 				try {
 					myBoard = (Board) msg_board.readObject();
 				} catch (ClassNotFoundException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();
 				}
-				msg_board.finish();
-				bound = myBoard.distance();
-				while(true)
+			}
+			msg_board.finish();
+			System.out.println("received myBoard");//DEBUG
+			
+			bound = myBoard.distance();
+			while(true)
+			{
+				info_msg = 0;
+				/* receive the information_message from master
+				 * to confirm whether to continue or not
+				 */
+				ReadMessage msg_info = receive_info_port.receive();
+				info_msg = msg_info.readInt();
+				msg_info.finish();
+
+				/* TERMINATE signal */
+				if(info_msg == -1)
+					break;
+
+				/* CONTINUE signal */
+				else
 				{
-					info_msg = 0;
-					/* receive the information_message from master
-					 * to confirm whether to continue or not
+					/* start the threads
+					 * Threads will not start immediately, 
+					 * since they will wait for notification from master thread
+					 * that jobs creation has been initiated 
 					 */
-					ReadMessage msg_info = receive_info_port.receive();
-					info_msg = msg_info.readInt();
-					msg_info.finish();
-
-					/* TERMINATE signal */
-					if(info_msg == -1)
-						break;
-
-					/* CONTINUE signal */
-					else
+					for(int i=0;i<total_threads; i++){
+						threads[i]=new thread_routine();
+						String astring = Integer.toString(i);
+						/* setting the name of the thread to integer number */ 
+						threads[i].setName(astring);
+						threads[i].start();
+					}
+					myBoard.setBound(bound);
+					//expand the board
+					generate_boards(myBoard);
+					System.out.println("queue filled up by worker");//DEBUG
+					
+					/* wait for all threads to finish */
+					for(int i=0; i<total_threads; i++)
 					{
-						/* start the threads
-						 * Threads will not start immediately, 
-						 * since they will wait for notification from master thread
-						 * that jobs creation has been initiated 
-						 */
-						for(int i=0;i<total_threads; i++){
-							threads[i]=new thread_routine();
-							String astring = Integer.toString(i);
-							/* setting the name of the thread to integer number */ 
-							threads[i].setName(astring);
-							threads[i].start();
+						try {
+							threads[i].join();
+						} catch (InterruptedException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
 						}
-						myBoard.setBound(bound);
-						//expand the board
-						generate_boards(myBoard);
-
-						/* wait for all threads to finish */
-						for(int i=0; i<total_threads; i++)
-						{
-							try {
-								threads[i].join();
-							} catch (InterruptedException e) {
-								// TODO Auto-generated catch block
-								e.printStackTrace();
-							}
-						}
-
-						WriteMessage msg_solution = send_solution_port.newMessage();
-						msg_solution.writeInt(solutions);
-						msg_solution.finish();
-
-						bound +=2;
-					}//else block end here
-				}//while block ends here
-				/* close all the ports */
-				send_solution_port.close();
-				receive_info_port.close();
-				receive_board_port.close();
+					}
+					System.out.println("Worker threads finished");//DEBUG
+					
+					WriteMessage msg_solution = send_solution_port.newMessage();
+					msg_solution.writeInt(solutions);
+					msg_solution.finish();
+					System.out.println("Solution sent to server");//DEBUG
+					bound +=2;
+				}//else block end here
+			}//while block ends here
+			/* close all the ports */
+			send_solution_port.close();
+			receive_info_port.close();
+			receive_board_port.close();
 		}//run ends here
 
 	}//worker class ends here
